@@ -41,15 +41,16 @@ end
 print("\n== 1. load ==")
 Fire(EVENT_ADD_ON_LOADED, "PBsQuestTrackerFontChanger")
 local addon = PBS_QUEST_TRACKER_FONT_CHANGER
-check("version read from manifest", addon.version, "1.1.0")
+check("version read from manifest", addon.version, "1.2.0")
 check("quest pools hooked at load", addon.hooked.quest, true)
 check("pursuit tracker hooked at load", addon.hooked.pursuit, true)
 check("house tracker hooked at load", addon.hooked.house, true)
 check("slash command registered", type(SLASH_COMMANDS["/pbquest"]), "function")
--- 1 explanation + 8 quest (heading, note, checkbox, 3 sliders, 2 dropdowns)
+-- 1 explanation
+-- + 11 quest (heading, note, checkbox, 3 size sliders, 3 layout sliders, 2 dropdowns)
 -- + 7 pursuit + 7 house (heading, note, checkbox, 2 sliders, 2 dropdowns each)
 -- + 3 shared (heading, reset, hint)
-check("panel rows built", #PanelRows, 26)
+check("panel rows built", #PanelRows, 29)
 
 print("\n== 2. defaults: nothing is written, in either tracker ==")
 Fire(EVENT_PLAYER_ACTIVATED)
@@ -249,14 +250,22 @@ for _, row in ipairs(PanelRows) do
 	if row.type == "dropdown" then dropdowns[#dropdowns + 1] = row end
 	if row.type == "checkbox" then checkboxes[#checkboxes + 1] = row end
 end
-check("seven sliders", #sliders, 7)
+-- Found by label rather than by position, so inserting a row somewhere does not silently
+-- re-point these at the wrong setting.
+local function RowFor(stringId)
+	local wanted = GetString(_G[stringId])
+	for _, row in ipairs(sliders) do
+		if row.label == wanted then return row end
+	end
+end
+check("ten sliders", #sliders, 10)
 check("six dropdowns", #dropdowns, 6)
 check("one checkbox per section", #checkboxes, 3)
-check("first slider reads the quest name size", sliders[1].getFunction(), 44)
-check("fourth slider reads the pursuit name size", sliders[4].getFunction(), 44)
-check("sixth slider reads the house name size", sliders[6].getFunction(), 44)
-sliders[7].setFunction(31)
-check("seventh slider set the house detail size", House("tagsLabel"):GetFontSize(), 31)
+check("quest name slider reads its size", RowFor("SI_PBSQTFC_SIZE_QUEST_NAME").getFunction(), 44)
+check("pursuit name slider reads its size", RowFor("SI_PBSQTFC_SIZE_PURSUIT_NAME").getFunction(), 44)
+check("house name slider reads its size", RowFor("SI_PBSQTFC_SIZE_HOUSE_NAME").getFunction(), 44)
+RowFor("SI_PBSQTFC_SIZE_HOUSE_DETAIL").setFunction(31)
+check("house detail slider set its size", House("tagsLabel"):GetFontSize(), 31)
 check("quest untouched by the house slider", FirstOf("headerPool"):GetFontSize(), 44)
 checkboxes[3].setFunction(false)
 check("house checkbox turned the house off", House("headerLabel"):GetFont(), "ZoFontGamepadBold27")
@@ -264,11 +273,78 @@ check("quest checkbox untouched", FirstOf("headerPool"):GetFontSize(), 44)
 check("pursuit checkbox untouched", Pursuit("headerLabel"):GetFontSize(), 44)
 checkboxes[3].setFunction(true)
 
+print("\n== 14b. the layout sliders move and scale the panel ==")
+local panel = FOCUSED_QUEST_TRACKER.trackerPanel
+local function PanelOffsets()
+	local _, _, _, _, x, y = panel:GetAnchor(0)
+	return x, y
+end
+check("panel starts where the game put it", select(1, PanelOffsets()), 0)
+check("panel scale starts at 1", panel:GetScale(), 1)
+
+RowFor("SI_PBSQTFC_POS_X").setFunction(-150)
+RowFor("SI_PBSQTFC_POS_Y").setFunction(40)
+RowFor("SI_PBSQTFC_SCALE").setFunction(80)
+FlushCallLater()
+local px, py = PanelOffsets()
+check("moved left", px, -150)
+check("moved down", py, 40)
+check("scaled", panel:GetScale(), 0.8)
+check("only one anchor is left on it", #panel.anchors, 1)
+check("the game's own anchor point is kept", select(2, panel:GetAnchor(0)), "TOPRIGHT")
+check("and its target", select(3, panel:GetAnchor(0)), DYNAMIC_EVENTS_TRACKER)
+
+-- The offsets are a nudge from the game's own, not an absolute position, so re-applying must
+-- not accumulate.
+addon:RequestLayout()
+addon:RequestLayout()
+FlushCallLater()
+check("the nudge does not accumulate", select(1, PanelOffsets()), -150)
+
+checkboxes[1].setFunction(false)
+FlushCallLater()
+check("off puts the panel back", select(1, PanelOffsets()), 0)
+check("off puts the scale back", panel:GetScale(), 1)
+checkboxes[1].setFunction(true)
+FlushCallLater()
+check("on restores the move", select(1, PanelOffsets()), -150)
+
+SLASH_COMMANDS["/pbquest"]("pos reset")
+FlushCallLater()
+check("pos reset puts it back", select(1, PanelOffsets()), 0)
+check("but keeps the scale", panel:GetScale(), 0.8)
+SLASH_COMMANDS["/pbquest"]("scale 100")
+FlushCallLater()
+check("scale 100 is the game's own", panel:GetScale(), 1)
+SLASH_COMMANDS["/pbquest"]("pos -40 10")
+SLASH_COMMANDS["/pbquest"]("scale 120")
+FlushCallLater()
+check("pos command moved it", select(2, PanelOffsets()), 10)
+check("scale command scaled it", panel:GetScale(), 1.2)
+
+print("\n== 14c. reset returns the panel as well as the fonts ==")
+SLASH_COMMANDS["/pbquest"]("reset")
+FlushCallLater()
+check("panel back where the game put it", select(1, PanelOffsets()), 0)
+check("and down too", select(2, PanelOffsets()), 0)
+check("panel scale back to 1", panel:GetScale(), 1)
+check("quest fonts back to the game's", FirstOf("headerPool"):GetFont(), "ZoFontGamepadBold27")
+-- ...and the settings the later checks rely on are put back by hand.
+SLASH_COMMANDS["/pbquest"]("pos -40 10")
+SLASH_COMMANDS["/pbquest"]("scale 120")
+addon:SetSizeFor("questName", 44)
+addon:SetSizeFor("pursuitName", 44)
+addon:SetSizeFor("houseDetail", 31)
+addon:Refresh()
+FlushCallLater()
+
 print("\n== 15. saved variables survive a reload ==")
 local store = SavedStore.PBsQuestTrackerFontChanger_Data
 check("quest sizes persisted", store.quest.sizes.Gamepad.questName, 44)
 check("house sizes persisted", store.house.sizes.Gamepad.houseDetail, 31)
 check("pursuit sizes persisted", store.pursuit.sizes.Gamepad.pursuitName, 44)
+check("layout persisted", store.quest.layout.Gamepad.offsetX, -40)
+check("scale persisted", store.quest.layout.Gamepad.scale, 120)
 check("measurements persisted outside the sections", store.measured.Gamepad.pursuitName, 20)
 
 print("\n== 16. loading again over labels that already carry our font ==")

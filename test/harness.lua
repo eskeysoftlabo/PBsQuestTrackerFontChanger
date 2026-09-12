@@ -25,7 +25,7 @@ function SetGamepadMode(v) gamepadMode = v end
 function GetAddOnManager()
 	return {
 		GetNumAddOns = function() return 1 end,
-		GetAddOnInfo = function(_, i) return "PBsQuestTrackerFontChanger", "|cFF69B4PB\u{2019}s QuestTrackerFontChanger|r 1.1.0" end,
+		GetAddOnInfo = function(_, i) return "PBsQuestTrackerFontChanger", "|cFF69B4PB\u{2019}s QuestTrackerFontChanger|r 1.2.0" end,
 	}
 end
 
@@ -136,8 +136,28 @@ local PLATFORM_FONTS = {
 	Gamepad = { headerPool = "ZoFontGamepadBold27", stepDescriptionPool = "ZoFontGamepadBold22", conditionPool = "ZoFontGamepad34" },
 	Keyboard = { headerPool = "ZoFontGameShadow", stepDescriptionPool = "ZoFontGameShadow", conditionPool = "ZoFontGameShadow" },
 }
+-- ZO_FocusedQuestTrackerPanel: the top-level control the whole tracker hangs off. Anchored
+-- once from XML and never re-anchored by the game, and its scale is never set.
+DYNAMIC_EVENTS_TRACKER = { name = "ZO_DynamicEventsTracker_TL" }
+local function MakePanel()
+	local panel = { anchors = { { valid = true, point = "TOPRIGHT", relativeTo = DYNAMIC_EVENTS_TRACKER, relativePoint = "BOTTOMRIGHT", x = 0, y = 0, constrains = "XY" } }, scale = 1 }
+	function panel:GetAnchor(i)
+		local a = self.anchors[i + 1]
+		if not a then return false end
+		return true, a.point, a.relativeTo, a.relativePoint, a.x, a.y, a.constrains
+	end
+	function panel:ClearAnchors() self.anchors = {} end
+	function panel:SetAnchor(point, relativeTo, relativePoint, x, y, constrains)
+		self.anchors[#self.anchors + 1] = { valid = true, point = point, relativeTo = relativeTo, relativePoint = relativePoint, x = x, y = y, constrains = constrains }
+	end
+	function panel:GetScale() return self.scale end
+	function panel:SetScale(v) self.scale = v end
+	function panel:GetNamedChild() return nil end
+	return panel
+end
+
 TreeViewUpdates = 0
-local tracker = { headerPool = NewPool(), stepDescriptionPool = NewPool(), conditionPool = NewPool(), numTracked = 0 }
+local tracker = { headerPool = NewPool(), stepDescriptionPool = NewPool(), conditionPool = NewPool(), numTracked = 0, trackerPanel = MakePanel() }
 local function PlatformFont(poolName) return PLATFORM_FONTS[IsInGamepadPreferredMode() and "Gamepad" or "Keyboard"][poolName] end
 -- The game's own SetCustomAcquireBehavior, installed before any add-on loads.
 for _, poolName in ipairs({ "headerPool", "stepDescriptionPool", "conditionPool" }) do
